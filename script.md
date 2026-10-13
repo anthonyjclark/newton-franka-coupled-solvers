@@ -45,7 +45,7 @@ recording (needs `ffmpeg`, no display):
 
 ```bash
 uv run main.py simulate --sim.video out/run.mp4      # any simulate command can add this
-slides/make_videos.sh                               # all eight demo variants into slides/videos/ (about 2-3 min)
+slides/make_videos.sh                               # all nine demo variants into slides/videos/ (about 2-3 min)
 ```
 
 | Slide | Video                      | Matches section |
@@ -55,6 +55,7 @@ slides/make_videos.sh                               # all eight demo variants in
 | 20    | 2x speed, place target     | 5               |
 | 22    | longer, stiff, soft cable  | 6               |
 | 25    | randomized (8 worlds)      | 6b              |
+| 26    | expensive randomization    | 6b              |
 
 **Say:** the videos are renders of the same recordings you play in the browser.
 Use a video when the live run would eat the time slot, and run the command live
@@ -322,6 +323,31 @@ another. The scales are written into the model arrays before the solvers are
 built (`_randomize_model`), and the pick and place keyframes are shifted per
 world (`_sample_randomization`).
 
+**Expensive options.** A second group changes the cable itself, so each world is built from
+its own `ModelBuilder` instead of one replicated template. Setup time grows with the
+number of worlds (about 6.5 s for 8 worlds, against about 3 s for 3), which is why they
+are separate from `--sim.rand.all`:
+
+```bash
+uv run main.py simulate --sim.num-worlds 8 --sim.rand.all --sim.rand.expensive
+uv run main.py simulate --sim.rand.cable-bend 0.8              # one expensive parameter only
+```
+
+| Flag (`--sim.rand.<name>`) | Randomizes                                   | Default range |
+| -------------------------- | -------------------------------------------- | ------------- |
+| `expensive`                | enables all of the rows below                |               |
+| `cable-length`             | cable length                                 | +-20%         |
+| `cable-radius`             | cable radius (re-seated on the ground)       | +-20%         |
+| `cable-segments`           | segment count                                | +-4 segments  |
+| `cable-bend`               | bend stiffness and damping                   | +-50%         |
+| `cable-stretch`            | stretch stiffness                            | +-50%         |
+| `cable-yaw`                | cable yaw about its centre                   | +-0.4 rad     |
+
+**Say:** these were the options we held back at first because they change the model
+topology and the rod's joint parameters. `SolverMuJoCo` needs the same number of bodies,
+joints and shapes in every world, so worlds with fewer segments are padded with inert
+dummy bodies. With `--sim.verbose` the header lists each world's sampled cable.
+
 **Point out:**
 
 - The header prints the active half-ranges (`Domain randomization (half-ranges)`).
@@ -334,11 +360,13 @@ world (`_sample_randomization`).
   `--sim.seed 7`): same flags, different per-world errors.
 - Slide 25 has a video of an 8-world `--sim.rand.all` run, if you would rather
   not wait for the live one.
+- Slide 26 has a video of an 8-world `--sim.rand.all --sim.rand.expensive` run; all 8
+  cables were placed within 1 to 7 cm of their targets.
 - In the viewer the arms visibly pick up the cable at slightly different spots
   and drop it at different places.
 
-**Caveats:** cable geometry, bend and stretch stiffness, cable yaw and the ground
-material are not randomized yet (see the README). The effect size of each
+**Caveats:** the ground material is not randomized yet (see the README). The gripper does
+not rotate to follow `cable-yaw`, so large yaws make the grasp worse. The effect size of each
 parameter on the outcome has not been measured. Runs with the same seed use the
 same parameters but are not bit-for-bit identical.
 

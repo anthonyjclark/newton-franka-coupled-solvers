@@ -20,3 +20,4 @@ run long-cable     --sim.num-worlds 1 --sim.cable-segments 31 --sim.cable-length
 run stiff-cable    --sim.num-worlds 1 --sim.cable-bend-stiffness 5e-2
 run soft-cable     --sim.num-worlds 1 --sim.cable-bend-stiffness 5e-5
 run randomized     --sim.num-worlds 8 --sim.rand.all
+run randomized-expensive --sim.num-worlds 8 --sim.rand.all --sim.rand.expensive

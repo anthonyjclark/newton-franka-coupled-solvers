@@ -4,7 +4,8 @@
 
 Videos come from slides/make_videos.sh. Each new slide goes right after the slide whose
 title is listed below, reusing the "Recording:" slide layout. Poster frames are extracted
-with ffmpeg. Refuses to run on a deck that already has "Video:" slides.
+with ffmpeg. Entries whose slide already exists are skipped, so it can top up a deck that
+already has some "Video:" slides; it fails if there is nothing to add.
 """
 
 import argparse
@@ -37,6 +38,10 @@ NEW = [
     ("Recording: randomization", "Video: randomization",
      "8 worlds with --sim.rand.all: each world gets its own friction, mass, gains and timing.",
      [("randomized", "")]),
+    ("Video: randomization", "Video: expensive randomization",
+     "8 worlds with --sim.rand.all --sim.rand.expensive: every world also gets its own cable "
+     "length, radius, segment count, stiffness and yaw.",
+     [("randomized-expensive", "")]),
 ]
 
 X0, W_ALL, Y0, H_ALL, GAP = 0.7, 11.9, 1.6, 4.3, 0.3  # content area of the recording slides
@@ -75,12 +80,14 @@ def main() -> None:
     prs = Presentation(args.deck)
     slides = list(prs.slides)
     titles = [title_of(s) for s in slides]
-    if any(t.startswith("Video:") for t in titles):
-        ap.error("deck already has Video: slides")
-    missing = [a for a, *_ in NEW if a not in titles]
+    todo = [e for e in NEW if e[1] not in titles]
+    if not todo:
+        ap.error("deck already has every Video: slide")
+    known = set(titles) | {e[1] for e in todo}
+    missing = [a for a, *_ in todo if a not in known]
     if missing:
         ap.error(f"no slide titled {missing}")
-    for *_, vids in NEW:
+    for *_, vids in todo:
         for name, _ in vids:
             if not (args.videos / f"{name}.mp4").is_file():
                 ap.error(f"missing {args.videos / (name + '.mp4')} (run slides/make_videos.sh)")
@@ -129,12 +136,13 @@ def main() -> None:
             x += w + GAP
 
     lst = prs.slides._sldIdLst
-    anchors = list(lst)  # original slide ids, by original position
-    for after, title, caption, vids in NEW:
+    anchors = dict(zip(titles, list(lst)))  # slide ids by title (new slides are added as they go)
+    for after, title, caption, vids in todo:
         make_slide(title, caption, vids)
         new_id = list(lst)[-1]
         lst.remove(new_id)
-        anchors[titles.index(after)].addnext(new_id)
+        anchors[after].addnext(new_id)
+        anchors[title] = new_id
     prs.save(args.out)
     print(f"saved {args.out}: {len(prs.slides)} slides")
 
