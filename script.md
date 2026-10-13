@@ -292,8 +292,11 @@ world (`_sample_randomization`).
 - The header prints the active half-ranges (`Domain randomization (half-ranges)`).
 - The per-world placement errors now differ (one `--sim.rand.all` run gave
   about 1.7 to 4.7 cm across 4 worlds).
-- Worlds finish at different times because of `timing`, so the run is lengthened
-  to fit the slowest world (about 431 to 465 frames instead of 420).
+- Each world runs at its own speed because of `timing`, so the run length follows
+  the slowest world: it can be longer or shorter than the nominal 420 frames
+  (438 and 410 in two recorded runs).
+- The slide after the table is a recording of two real runs (`--sim.rand.all`, then
+  `--sim.seed 7`): same flags, different per-world errors.
 - In the viewer the arms visibly pick up the cable at slightly different spots
   and drop it at different places.
 
