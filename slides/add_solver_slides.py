@@ -10,14 +10,11 @@ deck that already has them.
 """
 
 import argparse
-import copy
 from pathlib import Path
 
 from pptx import Presentation
-from pptx.enum.shapes import PP_PLACEHOLDER
-from pptx.util import Inches
+from deckkit import Kit, title_of
 
-A = "{http://schemas.openxmlformats.org/drawingml/2006/main}"
 AFTER = "Two solvers, one scene"
 FIRST = "Newton's solvers"
 
@@ -67,15 +64,6 @@ ADMM = [
 ]
 
 
-def title_shape(slide):
-    return next((s for s in slide.shapes if s.is_placeholder and s.placeholder_format.type == PP_PLACEHOLDER.TITLE), None)
-
-
-def title_of(slide) -> str:
-    sp = title_shape(slide)
-    return sp.text_frame.text if sp is not None else ""
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("deck", type=Path)
@@ -85,113 +73,26 @@ def main() -> None:
         ap.error("out must differ from deck (keep the original)")
 
     prs = Presentation(args.deck)
-    slides = list(prs.slides)
-    titles = [title_of(s) for s in slides]
+    titles = [title_of(s) for s in prs.slides]
     if FIRST in titles:
         ap.error(f"deck already has the {FIRST!r} slide")
     if AFTER not in titles:
         ap.error(f"no slide titled {AFTER!r}")
+    kit = Kit(prs)
 
-    ref = slides[titles.index(AFTER)]
-    layout = ref.slide_layout
-    ref_title = title_shape(ref)
-    ref_bullets = next(s for s in ref.shapes if s.name == "bullets")
-    ref_num = next(s for s in ref.shapes if s.name.startswith("Slide Number"))
-    ref_table = next(s for s in next(s for s in slides if title_of(s) == "Solver tuning").shapes if s.name == "tuning")
-    tbl = ref_table._element.find(f".//{A}tbl")
-    head_tc = copy.deepcopy(tbl.findall(f"{A}tr")[0].findall(f"{A}tc")[0])
-    body_tc = copy.deepcopy(tbl.findall(f"{A}tr")[1].findall(f"{A}tc")[0])
-    para_tpl = copy.deepcopy(ref_bullets._element.find(f".//{A}p"))
+    s1 = kit.new_slide(FIRST)
+    kit.table(s1, TABLE["cols"], TABLE["rows"], 0.7, 1.5, name="solvers")
+    kit.bullets(s1, ["Pick the coordinate system first: generalized for robots, maximal for the rest. "
+                     "Experimental: VBD and Kamino."], 0.7, 5.85, 11.9, 0.8, size=16, name="takeaway", plain=True)
+    kit.bullets(kit.new_slide("SolverMuJoCo: the arm"), MUJOCO, 0.7, 1.7, 11.9, 4.6, size=20)
+    kit.bullets(kit.new_slide("SolverKamino: for closed chains"), KAMINO, 0.7, 1.7, 11.9, 4.6, size=20)
+    s4 = kit.new_slide("Coupling: proxy vs ADMM")
+    kit.bullets(s4, PROXY, 0.7, 1.6, 5.8, 4.8, heading="Proxy (our demo)", size=17, name="proxy")
+    kit.bullets(s4, ADMM, 6.85, 1.6, 5.8, 4.8, heading="ADMM", size=17, name="admm")
+    kit.bullets(s4, ["Experimental API: it may change without notice."], 0.7, 6.35, 11.9, 0.4,
+                size=14, name="note", plain=True)
 
-    def new_slide(title):
-        s = prs.slides.add_slide(layout)
-        for ph in list(s.placeholders):
-            ph._element.getparent().remove(ph._element)
-        for src, text in ((ref_title, title), (ref_num, None)):
-            el = copy.deepcopy(src._element)
-            if text is not None:
-                el.findall(f".//{A}t")[0].text = text
-            s.shapes._spTree.append(el)
-        return s
-
-    def bullets(slide, items, x, y, w, h, heading=None, size=18, name="bullets", plain=False):
-        el = copy.deepcopy(ref_bullets._element)
-        el.find(".//{*}cNvPr").set("name", name)
-        el.find(".//{*}cNvPr").set("id", str(100 + len(slide.shapes)))
-        slide.shapes._spTree.append(el)
-        shape = slide.shapes[-1]
-        shape.left, shape.top, shape.width, shape.height = Inches(x), Inches(y), Inches(w), Inches(h)
-        body = el.find(f".//{{*}}txBody")
-        for p in body.findall(f"{A}p"):
-            body.remove(p)
-        if heading:
-            p = copy.deepcopy(para_tpl)
-            p.find(f"{A}pPr").set("marL", "0")
-            p.find(f"{A}pPr").set("indent", "0")
-            p.find(f"{A}pPr").remove(p.find(f"{A}pPr").find(f"{A}buChar"))
-            p.find(f"{A}pPr").append(p.makeelement(f"{A}buNone", {}))
-            r = p.find(f"{A}r")
-            r.find(f"{A}t").text = heading
-            r.find(f"{A}rPr").set("b", "1")
-            r.find(f"{A}rPr").set("sz", str((size + 4) * 100))
-            body.append(p)
-        for text in items:
-            p = copy.deepcopy(para_tpl)
-            r = p.find(f"{A}r")
-            r.find(f"{A}t").text = text
-            r.find(f"{A}rPr").set("sz", str(size * 100))
-            if plain:  # a note, not a list item
-                ppr = p.find(f"{A}pPr")
-                ppr.set("marL", "0")
-                ppr.set("indent", "0")
-                ppr.remove(ppr.find(f"{A}buChar"))
-                ppr.append(p.makeelement(f"{A}buNone", {}))
-            body.append(p)
-
-    def table(slide, spec, x, y, row_h=0.46, size=14):
-        shape = slide.shapes.add_table(len(spec["rows"]), len(spec["cols"]), Inches(x), Inches(y),
-                                       Inches(sum(spec["cols"])), Inches(row_h * len(spec["rows"])))
-        shape.name = "solvers"
-        gf = shape._element
-        t = gf.find(f".//{A}tbl")
-        for child in list(t):
-            t.remove(child)
-        grid = t.makeelement(f"{A}tblGrid", {})
-        for w in spec["cols"]:
-            grid.append(grid.makeelement(f"{A}gridCol", {"w": str(int(Inches(w)))}))
-        t.append(t.makeelement(f"{A}tblPr", {}))
-        t.append(grid)
-        for i, row in enumerate(spec["rows"]):
-            tr = t.makeelement(f"{A}tr", {"h": str(int(Inches(row_h)))})
-            for text in row:
-                tc = copy.deepcopy(head_tc if i == 0 else body_tc)
-                tc.findall(f".//{A}t")[0].text = text
-                for rpr in tc.findall(f".//{A}rPr"):
-                    rpr.set("sz", str(size * 100))
-                tr.append(tc)
-            t.append(tr)
-
-    s1 = new_slide(FIRST)
-    table(s1, TABLE, 0.7, 1.5)
-    bullets(s1, ["Pick the coordinate system first: generalized for robots, maximal for the rest. "
-                 "Experimental: VBD and Kamino."], 0.7, 5.85, 11.9, 0.8, size=16, name="takeaway", plain=True)
-
-    s2 = new_slide("SolverMuJoCo: the arm")
-    bullets(s2, MUJOCO, 0.7, 1.7, 11.9, 4.6, size=20)
-    s3 = new_slide("SolverKamino: for closed chains")
-    bullets(s3, KAMINO, 0.7, 1.7, 11.9, 4.6, size=20)
-    s4 = new_slide("Coupling: proxy vs ADMM")
-    bullets(s4, PROXY, 0.7, 1.6, 5.8, 4.8, heading="Proxy (our demo)", size=17, name="proxy")
-    bullets(s4, ADMM, 6.85, 1.6, 5.8, 4.8, heading="ADMM", size=17, name="admm")
-    bullets(s4, ["Experimental API: it may change without notice."], 0.7, 6.35, 11.9, 0.4, size=14, name="note", plain=True)
-
-    lst = prs.slides._sldIdLst
-    ids = list(lst)[-4:]
-    anchor = list(lst)[titles.index(AFTER)]
-    for sid in ids:
-        lst.remove(sid)
-        anchor.addnext(sid)
-        anchor = sid
+    kit.move_new_after(prs, titles.index(AFTER), 4)
     prs.save(args.out)
     print(f"saved {args.out}: {len(prs.slides)} slides")
 

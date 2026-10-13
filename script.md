@@ -2,8 +2,8 @@
 
 A guided tour of the coupled Franka + cable demo. Each section gives the
 **command**, what to **say**, and what to **point out**. Total time is about
-28 minutes of talking plus about 7.5 minutes of simulation time (measured
-timings are in each section and in the time budget; about 36 minutes with every
+32 minutes of talking plus about 7.5 minutes of simulation time (measured
+timings are in each section and in the time budget; about 40 minutes with every
 section). Run everything from the project root. Timings were measured on one
 CUDA GPU with a warm kernel cache; yours will vary.
 
@@ -50,18 +50,86 @@ slides/make_videos.sh                               # all nine demo variants int
 
 | Slide | Video                      | Matches section |
 | ----- | -------------------------- | --------------- |
-| 4     | single arm                 | 0b              |
-| 16    | 16 worlds                  | 4               |
-| 24    | 2x speed, place target     | 5               |
-| 26    | longer, stiff, soft cable  | 6               |
-| 29    | randomized (8 worlds)      | 6b              |
-| 31    | expensive randomization    | 6b              |
+| 8     | single arm                 | 0b              |
+| 20    | 16 worlds                  | 4               |
+| 28    | 2x speed, place target     | 5               |
+| 30    | longer, stiff, soft cable  | 6               |
+| 33    | randomized (8 worlds)      | 6b              |
+| 35    | expensive randomization    | 6b              |
 
 **Say:** the videos are renders of the same recordings you play in the browser.
 Use a video when the live run would eat the time slot, and run the command live
 when you want to show the printed timing and placement error (the videos do not).
 Each video shows a still frame until you play it; test playback in PowerPoint
 before the talk (it was only checked as a rendered still).
+
+---
+
+## Intro. What is Newton? (4 min, no commands)
+
+Slides 3 to 6, right after the agenda. They set the context before the first demo. Sources:
+the Newton overview page (stable docs) and the NVIDIA "Getting started with Newton" course.
+Where a claim comes from general knowledge rather than those pages, it is marked
+*(verify)* and worth a quick check before presenting.
+
+**What is Newton? (slide 3).** A GPU-accelerated, extensible physics engine for robotics and
+simulation research, built on NVIDIA Warp and maintained by Disney Research, Google DeepMind
+and NVIDIA. Its design goals are:
+
+- **GPU-first:** simulation runs on Warp, so many worlds step in parallel (section 4).
+- **Modular:** one `ModelBuilder` -> `Model` -> `State` / `Control` / `Contacts` API, and
+  swappable solvers (XPBD, VBD, MuJoCo, Featherstone, SemiImplicit, Kamino, ImplicitMPM,
+  Style3D) that you can also couple (section 1b).
+- **Import and export:** URDF, MJCF and USD. Some solvers are differentiable.
+
+**Say:** Newton is for physics. It takes a model and a time step and advances the state; the
+simulation loop is build, finalize, collide, step a solver, then render or export.
+
+**What Newton is not (slide 4).** The overview page does not list non-goals, so this slide is
+our framing *(verify)*:
+
+- **Not a photorealistic renderer.** Its viewers (`newton.viewer`, for example the GL and Viser
+  viewers used here) are for debugging and playback. Use a rendering application for
+  photorealism.
+- **Not a robot-learning framework.** There are no RL tasks, training loops or policies in
+  Newton. Isaac Lab provides those and can run Newton underneath.
+- **Not a one-solver-fits-all engine.** The solver table in section 1b shows each solver's
+  scope; no single one covers a stiff arm and a thin cable.
+- **Not a controller or task library.** The keyframes and IK in this demo are our own code
+  (Newton provides IK and controller building blocks, as the examples show).
+- **Not stable everywhere.** Solver coupling, VBD and Kamino are experimental.
+
+**Newton and its neighbours (slide 5).**
+
+| Project     | What it is                                             | Relationship to Newton |
+| ----------- | ------------------------------------------------------ | ---------------------- |
+| MuJoCo Warp | GPU MuJoCo from Google DeepMind                        | Integrated as `SolverMuJoCo`; our arm uses it (section 1b). Some MuJoCo properties are mapped differently or not at all. |
+| Isaac Lab   | NVIDIA's robot-learning framework                      | Can use Newton as its physics engine. The NVIDIA course covers configuring Newton in Isaac Lab and training a Franka cube-lift policy. |
+| Isaac Sim   | NVIDIA's robot simulator on Omniverse, with RTX rendering | Rendering and scene tooling around physics; Newton is a separate, standalone library. *(verify: neither source page describes the Isaac Sim relationship.)* |
+
+**Say:** MuJoCo Warp is the clearest link: it is a Newton solver. Isaac Lab sits on top for
+robot learning. For Isaac Sim, say only what you have checked.
+
+**Start with the Newton examples (slide 6).** The repo ships runnable examples, and the
+installed package has them too, so there is nothing to clone:
+
+```bash
+uv run python -m newton.examples --list                       # every example
+uv run python -m newton.examples basic_pendulum               # the default one
+uv run python -m newton.examples mujoco_vbd_coupled_solver    # closest to this demo
+```
+
+Each example takes `--viewer {gl,usd,rtx,rerun,null,viser}`, `--headless`, `--num-frames` and
+`--device`. Families: `basic_*` (shapes, joints, URDF), `cable_*`, `cloth_*`, `mpm_*`
+(deformables), `ik_*`, `diffsim_*` (differentiable), `kamino_*`, and a multiphysics group of
+coupled-solver examples. `franka_cable_ik_pick_place` and `mujoco_vbd_coupled_solver` are the
+closest relatives of this demo. Run `--help` on any example for its options. This project is
+pinned to Newton 1.5.x while the overview page documents 1.6.1, so example names can differ
+slightly from the current docs.
+
+**Point out:** the NVIDIA course "Getting started with Newton" (Newton Fundamentals, then
+Isaac Lab and Newton) walks through the same concepts, including the coupled cable lesson
+this demo grew from.
 
 ---
 
@@ -74,7 +142,7 @@ uv run main.py simulate --sim.num-worlds 1 --play
 ```
 
 Open the printed URL and let the 7 s pick-and-place play through.
-(Backup: the video on slide 4.)
+(Backup: the video on slide 8.)
 
 **Say:** this is the whole task: the arm picks up the cable and puts it
 somewhere else. Everything after this is how it works and how to scale it.
@@ -111,10 +179,10 @@ joint targets, and Warp kernels broadcast it to every world.
 
 ## 1b. Solvers and coupling: background (4 min, no commands)
 
-Slides 6 to 9. Use them to explain *why* the demo pairs these two solvers. Source: the
+Slides 10 to 13. Use them to explain *why* the demo pairs these two solvers. Source: the
 Newton docs pages "Solvers", "MuJoCo", "Kamino" and "Solver coupling" (stable).
 
-**Newton's solvers (slide 6).** A solver integrates a `Model`: you build a `State`, then
+**Newton's solvers (slide 10).** A solver integrates a `Model`: you build a `State`, then
 call `solver.step(state_in, state_out, control, contacts, dt)`. The first decision is the
 coordinate system:
 
@@ -137,7 +205,7 @@ Featherstone and SemiImplicit, and only in a basic form. Shape material fields (
 covers a stiff articulated arm and a thin deformable cable, which is why we couple two.
 The docs list `ROD` joints (the cable) only for VBD.
 
-**SolverMuJoCo (slide 7).** It wraps MuJoCo Warp. Each `step()` pushes Newton state into
+**SolverMuJoCo (slide 11).** It wraps MuJoCo Warp. Each `step()` pushes Newton state into
 MuJoCo, integrates, and pulls the result back. Points that matter here:
 
 - The default integrator is `implicitfast`, chosen for stability with stiff systems. We pass
@@ -150,14 +218,14 @@ MuJoCo, integrates, and pulls the result back. Points that matter here:
 - It does not support `ROD` joints, cloth, particles or soft bodies, and non-convex meshes
   are convex-hulled.
 
-**SolverKamino (slide 8).** A different tool, not used in the demo. It targets rigid
+**SolverKamino (slide 12).** A different tool, not used in the demo. It targets rigid
 mechanisms in maximal coordinates with kinematic loops, joint limits, hard frictional
 contacts and restitutive impacts. Backends: `"padmm"` (default, proximal ADMM, slower but
 robust) and `"dvi"` (sparse, faster, less accurate when many inequality constraints are
 active). It is experimental (BETA 1): the docs advise not depending on it. Mention it as
 the option to evaluate if you need closed chains rather than an arm and a cable.
 
-**Coupling (slide 9).** The coupled-solver framework is experimental. A
+**Coupling (slide 13).** The coupled-solver framework is experimental. A
 `SolverCoupled.Entry` names the bodies, particles and shapes one sub-solver owns, and the
 base class reconciles only owned outputs back into the shared state, so two solvers never
 overwrite the same body. Two ways to couple:
@@ -244,7 +312,7 @@ uv run main.py play --port 8000
 uv run main.py simulate --sim.num-worlds 16 --play
 ```
 
-(Backup: the 16-world video on slide 16.)
+(Backup: the 16-world video on slide 20.)
 
 **Say:** each world is a full copy of the scene. All worlds are simulated at the
 origin, and `--sim.world-spacing` only offsets them visually. Compare the
@@ -340,7 +408,7 @@ uv run main.py simulate --sim.place-x 0.3 --sim.place-y -0.2 --play
 ```
 
 Check the printed placement error to see whether the task still succeeds.
-(Backup: both runs side by side as videos on slide 24. The 2x run lasts 3.5 s.)
+(Backup: both runs side by side as videos on slide 28. The 2x run lasts 3.5 s.)
 
 ---
 
@@ -355,7 +423,7 @@ uv run main.py simulate --sim.cable-bend-stiffness 5e-2 --play
 uv run main.py simulate --sim.cable-bend-stiffness 5e-5 --play
 ```
 
-(Backup: the longer, stiff and soft cable videos side by side on slide 26. Play
+(Backup: the longer, stiff and soft cable videos side by side on slide 30. Play
 them together to compare how much the cable swings.)
 
 **Say:** this is the point of using VBD for the cable. Bend stiffness, stretch
@@ -431,11 +499,11 @@ dummy bodies. The run header lists each world's sampled cable.
   (438 and 410 in two recorded runs).
 - The slide after the table is a recording of two real runs (`--sim.rand.all`, then
   `--sim.seed 7`): same flags, different per-world errors.
-- Slide 29 has a video of an 8-world `--sim.rand.all` run, if you would rather
+- Slide 33 has a video of an 8-world `--sim.rand.all` run, if you would rather
   not wait for the live one. It passes `--sim.rand.cable-pos 0.10 --sim.rand.place-pos 0.15`
   (above the defaults) so the different pick and place spots are visible in the video; all 8
   cables were placed within 1 to 4 cm of their targets.
-- Slide 30 shows the expensive flags and slide 31 has a video of an 8-world
+- Slide 34 shows the expensive flags and slide 35 has a video of an 8-world
   `--sim.rand.all --sim.rand.expensive` run with the same two larger values; all 8 cables
   were placed within 1 to 6 cm of their targets.
 - In the viewer the arms visibly pick up the cable at slightly different spots
@@ -517,6 +585,7 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | --------------------------- | ------ | ---------- |
 | 0 Setup and warm-up         | 1 min  | 16 s       |
 | 0a Videos (slides only)     | 0 min  | none       |
+| Intro What is Newton        | 4 min  | none       |
 | 0b Single arm               | 2 min  | 16 s       |
 | 1 Big picture               | 2 min  | none       |
 | 1b Solvers and coupling     | 4 min  | none       |
@@ -529,9 +598,9 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | 6b Domain randomization     | 2 min  | ~20 s      |
 | 7 Solver tuning and profile | 2 min  | 65 s       |
 | 8–9 Remote, clean up        | 1.5 min| ~16 s      |
-| **Total**                   | ~28 min| ~7.5 min   |
+| **Total**                   | ~32 min| ~7.5 min   |
 
-Plus playback and questions: about 36 minutes, well over a 30 minute slot. Drop section 1b, 7, 4b or 6b if you are running behind, or play the slide videos
+Plus playback and questions: about 40 minutes, well over a 30 minute slot. Drop the intro, section 1b, 7, 4b or 6b if you are running behind, or play the slide videos
 (0a) instead of running sections 5 and 6 live, which saves about 70 s of simulation.
 Every command in this script was run and completed without errors.
 

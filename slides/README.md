@@ -23,6 +23,8 @@ uvx --from python-pptx python slides/add_videos.py slides-<old-timestamp>-<old-m
 a single arm", "Recording: 16 worlds", "Change the task", "Change the cable", "Recording:
 randomization"), reuses the "Recording:" slide layout, extracts poster frames with ffmpeg,
 and refuses to run on a deck that already has "Video:" slides or to overwrite its input.
+`add_intro_slides.py` adds four "What is Newton" slides after the agenda (and sets the agenda
+total). The slide-adding scripts share `deckkit.py`, which clones the deck's own shapes.
 `add_randomization_slide.py` adds the "Expensive randomization" text slide (and sets the agenda
 total); run it before `add_videos.py --refresh`, which also swaps the media of existing video
 slides for the current files.
