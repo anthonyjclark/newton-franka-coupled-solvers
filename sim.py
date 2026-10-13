@@ -780,7 +780,7 @@ class CoupledFrankaCable:
                 n_steady = frames - 1
                 print(
                     f"Timing: cuda_graph={'on' if use_graph else 'off'} setup={self.setup_time:.2f}s "
-                    f"first_frame={first_frame:.2f}s (kernel compile/cache load) "
+                    f"first_frame={first_frame:.2f}s "
                     f"steady={steady:.2f}s = {1e3 * steady / n_steady:.2f} ms/frame "
                     f"({n_steady * cfg.num_worlds / steady:.1f} world-frames/s)"
                 )
