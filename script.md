@@ -19,8 +19,6 @@ Demo highlights for the audience:
 - parallelizing worlds
 - running headless and visualizing locally
 
-TODO(ajc): the first thing is a demo of the simulation with a single arm
-
 ---
 
 ## 0. Before you start
@@ -35,6 +33,26 @@ uv run main.py --help        # three subcommands: simulate, play, clean
   kernels, so it is slow. **Do a warm-up run before the audience arrives:**
   `uv run main.py simulate --quiet`. (Cold, with no kernel cache, this takes
   about 45 s: roughly 11 s setup and 32 s compiling kernels. Warm, it takes 16 s.)
+
+---
+
+## 0b. First demo: a single arm (2 min, run takes ~16 s warm)
+
+Start with the simplest case before explaining anything: one arm, one cable.
+
+```bash
+uv run main.py simulate --sim.num-worlds 1 --play
+```
+
+Open the printed URL and let the 7 s pick-and-place play through.
+
+**Say:** this is the whole task: the arm picks up the cable and puts it
+somewhere else. Everything after this is how it works and how to scale it.
+Steady speed is about 23 ms/frame (about 44 world-frames/s). A single world
+barely uses the GPU, which is why section 4 gets so much more out of it.
+
+**Note:** the first run with a new world count recompiles kernels (about 19 s
+extra). Run `--sim.num-worlds 1` once during warm-up so this one is fast.
 
 ---
 
@@ -140,7 +158,24 @@ uv run main.py simulate --sim.device cpu --sim.num-worlds 1   # no GPU needed, s
 uv run main.py simulate --sim.world-spacing 1.5   # spread them out again
 ```
 
-TODO(ajc): add timing for 1 world on the CPU vs 16 worlds on the GPU
+**CPU vs GPU.** Compare one world on the CPU with 16 worlds on the GPU:
+
+```bash
+uv run main.py simulate --sim.device cpu --sim.num-worlds 1 --sim.steps 60
+uv run main.py simulate --sim.num-worlds 16
+```
+
+| Run               | Steady ms/frame | World-frames/s |
+| ----------------- | --------------- | -------------- |
+| 1 world, CPU      | ~104            | ~9.6           |
+| 1 world, GPU      | ~23             | ~44            |
+| 16 worlds, GPU    | ~27             | ~590           |
+
+**Say:** 16 worlds on the GPU is about 60x the CPU throughput. Most of that comes
+from batching: 16 worlds cost barely more per frame than one. The CPU run takes
+about 40 s the first time (12 s setup, 17 s compiling), and the CPU has no CUDA
+graph, so use `--sim.steps 60` and do not run the full task there. Its short run
+ends with a large placement error (about 27 cm) simply because it stops early.
 
 ---
 
@@ -290,18 +325,20 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | Section                     | Talk   | Simulation |
 | --------------------------- | ------ | ---------- |
 | 0 Setup and warm-up         | 1 min  | 16 s       |
+| 0b Single arm               | 2 min  | 16 s       |
 | 1 Big picture               | 2 min  | none       |
 | 2 Simulate                  | 2 min  | 16 s       |
 | 3 Play back                 | 2 min  | none       |
-| 4 Scale                     | 2 min  | 35 s       |
+| 4 Scale (incl. CPU run)     | 3 min  | ~75 s      |
 | 4b Graph and cache          | 3 min  | ~2 min     |
 | 5 Task (2 runs)             | 2 min  | 26 s       |
 | 6 Cable (3 runs)            | 2 min  | 47 s       |
 | 7 Solver tuning and profile | 2 min  | 65 s       |
 | 8–9 Remote, clean up        | 1.5 min| ~16 s      |
-| **Total**                   | ~19 min| ~6 min     |
+| **Total**                   | ~22 min| ~7 min     |
 
-Plus playback and questions: about 25 minutes, under the 30 minute limit.
+Plus playback and questions: about 28 minutes, under the 30 minute limit.
+Drop section 7 or 4b if you are running behind.
 Every command in this script was run and completed without errors.
 
 ## Suggested demo order if time is short (5 min)
