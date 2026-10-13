@@ -30,7 +30,7 @@ IS_NOT = [
     "A photorealistic renderer: its viewers are for debugging and playback",
     "A robot-learning framework: no RL tasks, training loops or policies (Isaac Lab adds those)",
     "A one-solver-fits-all engine: you pick, or couple, solvers per scene",
-    "A controller or task library: the keyframes and IK in this demo are our own code on top",
+    "A task library: the keyframes and pick-and-place logic here are our own code (the IK is newton.ik)",
     "Stable everywhere: coupling, VBD and Kamino are experimental",
 ]
 NEIGHBOURS = {

@@ -95,8 +95,9 @@ our framing *(verify)*:
   Newton. Isaac Lab provides those and can run Newton underneath.
 - **Not a one-solver-fits-all engine.** The solver table in section 1b shows each solver's
   scope; no single one covers a stiff arm and a thin cable.
-- **Not a controller or task library.** The keyframes and IK in this demo are our own code
-  (Newton provides IK and controller building blocks, as the examples show).
+- **Not a task library.** The keyframes and the pick-and-place logic in this demo are our own
+  code. The IK is Newton's: `newton.ik.IKSolver` (batched Levenberg-Marquardt, one problem per
+  world), and the examples include more controller building blocks.
 - **Not stable everywhere.** Solver coupling, VBD and Kamino are experimental.
 
 **Newton and its neighbours (slide 5).**
@@ -172,8 +173,9 @@ PD control). The cable uses `SolverVBD` (good at thin, stiff, deformable rods).
 The cable solver sees the gripper bodies as a proxy. The gripper moves the
 cable, and the cable pushes back. `mode="lagged"` means the proxy lags by one step.
 
-**Task control:** A keyframe table drives the hand target. IK turns it into
-joint targets, and Warp kernels broadcast it to every world.
+**Task control:** A keyframe table (our code) drives the hand target. Newton's batched
+`ik.IKSolver` turns it into joint targets, one IK problem per world. The per-world targets are
+interpolated on the host each frame and copied to the GPU.
 
 ---
 
