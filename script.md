@@ -346,7 +346,7 @@ uv run main.py simulate --sim.rand.cable-bend 0.8              # one expensive p
 **Say:** these were the options we held back at first because they change the model
 topology and the rod's joint parameters. `SolverMuJoCo` needs the same number of bodies,
 joints and shapes in every world, so worlds with fewer segments are padded with inert
-dummy bodies. With `--sim.verbose` the header lists each world's sampled cable.
+dummy bodies. The run header lists each world's sampled cable.
 
 **Point out:**
 
