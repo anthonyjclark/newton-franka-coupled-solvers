@@ -3,8 +3,8 @@
 A guided tour of the coupled Franka + cable demo. Each section gives the
 **command**, what to **say**, and what to **point out**. Total time is about
 about 15 minutes of talking plus about 5 minutes of simulation time (measured
-timings are in each section; worst case with every optional section is under
-30 minutes). Run everything from the project root. Timings were measured on one
+timings are in each section; worst case with every optional section is about
+31 minutes). Run everything from the project root. Timings were measured on one
 CUDA GPU with a warm kernel cache; yours will vary.
 
 **The one-sentence pitch:** a MuJoCo-solved Franka arm picks up a VBD-solved
@@ -257,6 +257,53 @@ may not be graspable at all.
 
 ---
 
+## 6b. Domain randomization (2 min, runs take ~20 s each)
+
+Every world can get its own random parameters, so one run covers many variations
+of the task. This is where many parallel worlds pay off beyond raw speed.
+
+```bash
+uv run main.py simulate --sim.rand.all --play                  # every parameter, default ranges
+uv run main.py simulate --sim.rand.friction 0.5                # only cable friction, +-50%
+uv run main.py simulate --sim.rand.all --sim.rand.timing 0     # everything except task timing
+uv run main.py simulate --sim.rand.all --sim.seed 7            # a different draw
+```
+
+| Flag (`--sim.rand.<name>`) | Randomizes                                     | Default range |
+| -------------------------- | ---------------------------------------------- | ------------- |
+| `friction`                 | cable friction coefficient                     | +-30%         |
+| `contact-ke`               | cable contact stiffness and damping            | +-20%         |
+| `cable-mass`               | cable mass and inertia                         | +-30%         |
+| `arm-gains`                | Franka arm PD gains                            | +-20%         |
+| `cable-pos`                | cable start position (x, y); the grasp follows | +-3 cm        |
+| `place-pos`                | place target (x, y)                            | +-5 cm        |
+| `timing`                   | task speed                                     | +-10%         |
+
+**Say:** each value is a uniform half-range around nominal, drawn per world from
+`--sim.seed`. Unset means off, or the default range if `--sim.rand.all` is given;
+`0` always switches a parameter off. Relative ranges must be below 1. The draw
+order is fixed, so turning on one parameter never changes the samples of
+another. The scales are written into the model arrays before the solvers are
+built (`_randomize_model`), and the pick and place keyframes are shifted per
+world (`_sample_randomization`).
+
+**Point out:**
+
+- The header prints the active half-ranges (`Domain randomization (half-ranges)`).
+- The per-world placement errors now differ (one `--sim.rand.all` run gave
+  about 1.7 to 4.7 cm across 4 worlds).
+- Worlds finish at different times because of `timing`, so the run is lengthened
+  to fit the slowest world (about 431 to 465 frames instead of 420).
+- In the viewer the arms visibly pick up the cable at slightly different spots
+  and drop it at different places.
+
+**Caveats:** cable geometry, bend and stretch stiffness, cable yaw and the ground
+material are not randomized yet (see the README). The effect size of each
+parameter on the outcome has not been measured. Runs with the same seed use the
+same parameters but are not bit-for-bit identical.
+
+---
+
 ## 7. Solver and coupling tuning (1–2 min, runs take 15–28 s each)
 
 ```bash
@@ -333,12 +380,12 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | 4b Graph and cache          | 3 min  | ~2 min     |
 | 5 Task (2 runs)             | 2 min  | 26 s       |
 | 6 Cable (3 runs)            | 2 min  | 47 s       |
+| 6b Domain randomization     | 2 min  | ~20 s      |
 | 7 Solver tuning and profile | 2 min  | 65 s       |
 | 8–9 Remote, clean up        | 1.5 min| ~16 s      |
-| **Total**                   | ~22 min| ~7 min     |
+| **Total**                   | ~24 min| ~7.5 min   |
 
-Plus playback and questions: about 28 minutes, under the 30 minute limit.
-Drop section 7 or 4b if you are running behind.
+Plus playback and questions: about 31 minutes, just over a 30 minute slot. Drop section 7, 4b or 6b if you are running behind.
 Every command in this script was run and completed without errors.
 
 ## Suggested demo order if time is short (5 min)
@@ -346,4 +393,4 @@ Every command in this script was run and completed without errors.
 1. Section 1 (the big picture, 1 min)
 2. Section 2 (simulate)
 3. Section 3 (play back)
-4. Section 6, one cable variant
+4. Section 6, one cable variant, or section 6b (`--sim.rand.all`)
