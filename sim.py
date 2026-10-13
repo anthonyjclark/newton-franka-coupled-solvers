@@ -60,17 +60,47 @@ class Randomization:
     timing: float | None = None
     """Task speed, relative (default 0.1 = tasks run 10% faster or slower)."""
 
+    expensive: bool = False
+    """Enable every expensive parameter below at its default range (explicit values override).
+    These change the model topology or the solver's joint parameters, so every world is built
+    from its own ModelBuilder instead of one replicated template: setup time grows with the
+    number of worlds, and worlds no longer share a memory layout."""
+    cable_length: float | None = None
+    """Cable length, relative (default 0.2)."""
+    cable_radius: float | None = None
+    """Cable radius, relative (default 0.2). The cable is re-seated on the ground."""
+    cable_segments: float | None = None
+    """Cable segment count, +- this many segments (default 4). Worlds get different body counts."""
+    cable_bend: float | None = None
+    """Cable bend stiffness (and damping), relative (default 0.5)."""
+    cable_stretch: float | None = None
+    """Cable stretch stiffness, relative (default 0.5)."""
+    cable_yaw: float | None = None
+    """Cable yaw about its centre, radians (default 0.4); the gripper does not follow it."""
+
     DEFAULTS = {  # noqa: RUF012
         "friction": 0.3, "contact_ke": 0.2, "cable_mass": 0.3, "arm_gains": 0.2,
         "cable_pos": 0.03, "place_pos": 0.05, "timing": 0.1,
     }  # fmt: skip
+    EXPENSIVE_DEFAULTS = {  # noqa: RUF012
+        "cable_length": 0.2, "cable_radius": 0.2, "cable_segments": 4.0,
+        "cable_bend": 0.5, "cable_stretch": 0.5, "cable_yaw": 0.4,
+    }  # fmt: skip
+    ABSOLUTE = ("cable_pos", "place_pos", "cable_segments", "cable_yaw")  # not relative
 
     def ranges(self) -> dict[str, float]:
         out = {}
-        for name, default in self.DEFAULTS.items():
-            v = getattr(self, name)
-            out[name] = float(v) if v is not None else (default if self.all else 0.0)
+        for defaults, enabled in ((self.DEFAULTS, self.all), (self.EXPENSIVE_DEFAULTS, self.expensive)):
+            for name, default in defaults.items():
+                v = getattr(self, name)
+                out[name] = float(v) if v is not None else (default if enabled else 0.0)
         return out
+
+    @property
+    def per_world_build(self) -> bool:
+        """True when any expensive parameter is active (each world needs its own builder)."""
+        r = self.ranges()
+        return any(r[name] > 0 for name in self.EXPENSIVE_DEFAULTS)
 
     def validate(self) -> None:
         for name, v in self.ranges().items():
@@ -78,7 +108,7 @@ class Randomization:
                 raise ValueError(
                     f"--sim.rand.{name.replace('_', '-')} must be >= 0 (got {v})"
                 )
-            if name not in ("cable_pos", "place_pos") and v >= 1:
+            if name not in self.ABSOLUTE and v >= 1:
                 raise ValueError(
                     f"--sim.rand.{name.replace('_', '-')} is relative and must be < 1 (got {v})"
                 )
@@ -191,21 +221,12 @@ def set_gripper_q(
 
 
 @wp.kernel
-def cable_centroid(
-    body_q: wp.array[wp.transform],
-    bodies_per_world: int,
-    cable_first_body: int,
-    segments: int,
-    centroid: wp.array[wp.vec3],
+def scatter_targets(
+    ik_q: wp.array2d[float], target_idx: wp.array2d[int], target_q: wp.array[float]
 ):
-    """Average the cable segment positions of every world (one thread per segment)."""
-    tid = wp.tid()
-    world = tid // segments
-    seg = tid % segments
-    p = wp.transform_get_translation(
-        body_q[world * bodies_per_world + cable_first_body + seg]
-    )
-    wp.atomic_add(centroid, world, p / float(segments))
+    """Write each world's IK result into its (possibly offset) slice of the joint targets."""
+    world, c = wp.tid()
+    target_q[target_idx[world, c]] = ik_q[world, c]
 
 
 @wp.kernel
@@ -235,9 +256,11 @@ def _add_franka(builder: newton.ModelBuilder, base_z: float) -> None:
 
 
 def _build_one_world(
-    cfg: SimConfig, surface_z: float, contact_ke: float, contact_kd: float
+    cfg: SimConfig, surface_z: float, contact_ke: float, contact_kd: float, geom: dict
 ):
-    """Franka + cable for a single world. Returns the builder and local index ranges."""
+    """Franka + cable for a single world. Returns the builder and local index ranges.
+
+    ``geom`` holds this world's cable parameters: segments, length, radius, bend, stretch, yaw."""
     b = newton.ModelBuilder(gravity=-9.81)
     b.rigid_gap = 0.01
     SolverMuJoCo.register_custom_attributes(b)
@@ -278,23 +301,26 @@ def _build_one_world(
         margin=0.0,
         gap=0.01,
     )
+    half = 0.5 * geom["length"]
+    yaw = geom["yaw"]
+    d = (np.cos(yaw), np.sin(yaw))  # yaw about the cable centre (cable_x, 0)
     points, quats = newton.utils.create_straight_cable_points_and_quaternions(
-        start=wp.vec3(cfg.cable_x - 0.5 * cfg.cable_length, 0.0, cfg.cable_height),
-        direction=wp.vec3(1.0, 0.0, 0.0),
-        length=cfg.cable_length,
-        num_segments=cfg.cable_segments,
+        start=wp.vec3(cfg.cable_x - half * d[0], -half * d[1], surface_z + geom["radius"]),
+        direction=wp.vec3(d[0], d[1], 0.0),
+        length=geom["length"],
+        num_segments=geom["segments"],
         twist_total=0.0,
     )
     b.add_rod(
         positions=points,
         quaternions=quats,
-        radius=cfg.cable_radius,
+        radius=geom["radius"],
         body_frame_origin="start",
         cfg=cable_cfg,
-        stretch_stiffness=cfg.cable_stretch_stiffness,
+        stretch_stiffness=geom["stretch"],
         stretch_damping=1.0e-1,
-        bend_stiffness=cfg.cable_bend_stiffness,
-        bend_damping=2.0e-3 * cfg.cable_bend_stiffness,
+        bend_stiffness=geom["bend"],
+        bend_damping=2.0e-3 * geom["bend"],
         label="vbd_cable",
     )
     cable = dict(
@@ -302,6 +328,16 @@ def _build_one_world(
         joints=list(range(joint0, b.joint_count)),
         shapes=list(range(shape0, b.shape_count)),
     )
+
+    # SolverMuJoCo needs every world to hold the same number of bodies, joints and shapes
+    # (with matching types), but a world with a shorter cable has fewer of each. Pad with inert
+    # capsule bodies, parked far below the scene, hung from the world by cable joints. No solver
+    # owns them and they have no collision.
+    pad_cfg = newton.ModelBuilder.ShapeConfig(has_shape_collision=False, has_particle_collision=False)
+    for _ in range(geom.get("pad", 0)):
+        pad = b.add_body(xform=wp.transform(wp.vec3(0.0, 0.0, -50.0), wp.quat_identity()), label="pad")
+        b.add_shape_capsule(body=pad, radius=0.001, half_height=0.001, cfg=pad_cfg, label="pad")
+        b.add_joint_cable(parent=-1, child=pad, parent_xform=b.body_q[pad], label="pad")
 
     gripper = [
         i
@@ -368,19 +404,37 @@ class CoupledFrankaCable:
 
     # -- construction ------------------------------------------------------
     def _build_scene(self) -> None:
-        cfg = self.cfg
-        one, franka, cable, gripper = _build_one_world(
-            cfg, self.surface_z, self.contact_ke, self.contact_kd
-        )
-        self.bodies_per_world = one.body_count
-        self.cable_first_body = cable["bodies"][0]
-        n_b, n_j, n_s = one.body_count, one.joint_count, one.shape_count
+        """Build the multi-world model and record every world's global index ranges.
 
+        Without expensive randomization one world is built and replicated. With it, each world
+        is built from its own builder (different cable topology and joint parameters), so
+        worlds can differ in body/joint counts and every index range is tracked per world."""
+        cfg = self.cfg
+        n = cfg.num_worlds
         scene = newton.ModelBuilder(gravity=-9.81)
         scene.rigid_gap = 0.01
         SolverMuJoCo.register_custom_attributes(scene)
         SolverVBD.register_custom_attributes(scene, dahl_defaults_enabled=False)
-        scene.replicate(one, cfg.num_worlds)
+
+        # Per world: global (body, joint, shape) starts plus the franka/cable/gripper index lists.
+        self.layout = []
+        build = lambda w: _build_one_world(  # noqa: E731
+            cfg, self.surface_z, self.contact_ke, self.contact_kd, self.geoms[w]
+        )
+        if cfg.rand.per_world_build:
+            for w in range(n):
+                one, franka, cable, gripper = build(w)
+                self.layout.append(
+                    (scene.body_count, scene.joint_count, scene.shape_count, franka, cable, gripper)
+                )
+                scene.add_world(one)
+        else:
+            one, franka, cable, gripper = build(0)
+            for w in range(n):
+                self.layout.append(
+                    (w * one.body_count, w * one.joint_count, w * one.shape_count, franka, cable, gripper)
+                )
+            scene.replicate(one, n)
 
         plane_cfg = newton.ModelBuilder.ShapeConfig(
             ke=self.contact_ke, kd=self.contact_kd, mu=1.0, margin=0.0, gap=0.01
@@ -397,27 +451,32 @@ class CoupledFrankaCable:
         self.model.shape_material_kd.fill_(self.contact_kd)
         self.model.shape_material_mu.fill_(1.0)
 
-        # Global index lists: world w owns bodies/joints/shapes [w*n, (w+1)*n).
-        worlds = range(cfg.num_worlds)
-        gather = lambda key, stride, src: [  # noqa: E731
-            i
-            for w in worlds
-            for i in _offset(src[key] if isinstance(src, dict) else src, w * stride)
-        ]
-        self.franka_bodies = gather("bodies", n_b, franka)
-        self.franka_joints = gather("joints", n_j, franka)
-        self.franka_shapes = gather("shapes", n_s, franka)
-        self.cable_bodies = gather("bodies", n_b, cable)
-        self.cable_joints = gather("joints", n_j, cable)
-        self.cable_shapes = gather("shapes", n_s, cable)
-        self.gripper_bodies = gather(None, n_b, gripper)
+        def per_world(key, which):  # list (per world) of global index arrays
+            col = {"bodies": 0, "joints": 1, "shapes": 2}[key]
+            return [
+                np.asarray(item[3 + which][key], dtype=int) + item[col] for item in self.layout
+            ]
+
+        flat = lambda lists: [int(i) for idx in lists for i in idx]  # noqa: E731
+        self.cable_bodies_w = per_world("bodies", 1)
+        self.cable_shapes_w = per_world("shapes", 1)
+        self.franka_joints_w = per_world("joints", 0)
+        self.franka_bodies = flat(per_world("bodies", 0))
+        self.franka_joints = flat(self.franka_joints_w)
+        self.franka_shapes = flat(per_world("shapes", 0))
+        self.cable_bodies = flat(self.cable_bodies_w)
+        self.cable_joints = flat(per_world("joints", 1))
+        self.cable_shapes = flat(self.cable_shapes_w)
+        self.gripper_bodies = flat(
+            np.asarray(item[5], dtype=int) + item[0] for item in self.layout
+        )
 
     def _sample_randomization(self) -> None:
         """Draw every per-world random scale up front (fixed draw order, so enabling one
         parameter never changes the values of another)."""
         cfg, n = self.cfg, self.cfg.num_worlds
         self.rand_ranges = r = cfg.rand.ranges()
-        u = np.random.default_rng(cfg.seed).uniform(-1.0, 1.0, size=(9, n))
+        u = np.random.default_rng(cfg.seed).uniform(-1.0, 1.0, size=(15, n))
         self.rand = {
             "friction": 1.0 + r["friction"] * u[0],
             "contact_ke": 1.0 + r["contact_ke"] * u[1],
@@ -427,6 +486,21 @@ class CoupledFrankaCable:
             "cable_dxy": r["cable_pos"] * u[5:7].T,  # (n, 2)
             "place_dxy": r["place_pos"] * u[7:9].T,  # (n, 2)
         }
+        # Expensive per-world cable parameters (rows 9+ keep the cheap draws unchanged).
+        segs = cfg.cable_segments + np.rint(r["cable_segments"] * u[9]).astype(int)
+        max_segs = int(segs.max())
+        self.geoms = [
+            {
+                "segments": max(2, int(segs[w])),
+                "length": cfg.cable_length * (1.0 + r["cable_length"] * u[10, w]),
+                "radius": cfg.cable_radius * (1.0 + r["cable_radius"] * u[11, w]),
+                "bend": cfg.cable_bend_stiffness * (1.0 + r["cable_bend"] * u[12, w]),
+                "stretch": cfg.cable_stretch_stiffness * (1.0 + r["cable_stretch"] * u[13, w]),
+                "yaw": float(r["cable_yaw"] * u[14, w]),
+                "pad": max_segs - max(2, int(segs[w])),
+            }
+            for w in range(n)
+        ]
 
         # Per-world keyframes: pick keyframes follow the cable, the rest the place target.
         self.world_targets = np.repeat(self.targets[None], n, axis=0)  # (n, K, 8)
@@ -436,6 +510,9 @@ class CoupledFrankaCable:
         self.world_targets[:, N_PICK_KEYFRAMES:, 0:2] += self.rand["place_dxy"][
             :, None, :
         ]
+        # Thicker/thinner cables are re-seated on the ground, so the grasp height follows.
+        dz = np.array([g["radius"] - cfg.cable_radius for g in self.geoms])
+        self.world_targets[:, :, 2] += dz[:, None]
         self.place_xy = (
             np.array([cfg.place_x, cfg.place_y], dtype=np.float32)
             + self.rand["place_dxy"]
@@ -443,37 +520,33 @@ class CoupledFrankaCable:
 
     def _randomize_model(self) -> None:
         """Write the sampled scales into the model. Must run before the solvers are built."""
-        model, n, rand = self.model, self.cfg.num_worlds, self.rand
+        model, rand = self.model, self.rand
 
-        cable_shapes = np.asarray(self.cable_shapes).reshape(n, -1)
-        cable_bodies = np.asarray(self.cable_bodies).reshape(n, -1)
-        dofs_per_world = model.joint_dof_count // n
-        arm_dofs = (
-            np.arange(n)[:, None] * dofs_per_world + np.arange(7)[None, :]
-        )  # first 7 = arm joints
+        # First 7 coordinates of each world's first joint block = arm joints.
+        qd_start = model.joint_qd_start.numpy()
+        arm_dofs = [qd_start[j[0]] + np.arange(7) for j in self.franka_joints_w]
 
-        def apply(arr, idx, factor):
+        def apply(arr, idx_per_world, factor):
             host = arr.numpy()
-            f = factor.reshape((n,) + (1,) * (host[idx].ndim - 1))
-            host[idx] = host[idx] * f
+            for w, idx in enumerate(idx_per_world):
+                host[idx] = host[idx] * factor[w]
             arr.assign(host)
 
-        apply(model.shape_material_mu, cable_shapes, rand["friction"])
-        apply(model.shape_material_ke, cable_shapes, rand["contact_ke"])
-        apply(model.shape_material_kd, cable_shapes, rand["contact_ke"])
-        apply(model.body_mass, cable_bodies, rand["cable_mass"])
-        apply(model.body_inertia, cable_bodies, rand["cable_mass"])
-        apply(model.body_inv_mass, cable_bodies, 1.0 / rand["cable_mass"])
-        apply(model.body_inv_inertia, cable_bodies, 1.0 / rand["cable_mass"])
+        apply(model.shape_material_mu, self.cable_shapes_w, rand["friction"])
+        apply(model.shape_material_ke, self.cable_shapes_w, rand["contact_ke"])
+        apply(model.shape_material_kd, self.cable_shapes_w, rand["contact_ke"])
+        apply(model.body_mass, self.cable_bodies_w, rand["cable_mass"])
+        apply(model.body_inertia, self.cable_bodies_w, rand["cable_mass"])
+        apply(model.body_inv_mass, self.cable_bodies_w, 1.0 / rand["cable_mass"])
+        apply(model.body_inv_inertia, self.cable_bodies_w, 1.0 / rand["cable_mass"])
         apply(model.joint_target_ke, arm_dofs, rand["arm_gains"])
         apply(model.joint_target_kd, arm_dofs, rand["arm_gains"])
 
     def _shift_cable(self, state) -> None:
         """Translate every world's cable by its sampled (dx, dy)."""
-        n = self.cfg.num_worlds
-        idx = np.asarray(self.cable_bodies).reshape(n, -1)
         q = state.body_q.numpy()
-        q[idx, 0:2] += self.rand["cable_dxy"][:, None, :].astype(q.dtype)
+        for w, idx in enumerate(self.cable_bodies_w):
+            q[idx, 0:2] += self.rand["cable_dxy"][w].astype(q.dtype)
         state.body_q.assign(q)
 
     def _ground_pairs(self):
@@ -552,9 +625,16 @@ class CoupledFrankaCable:
         ik_model = ik_builder.finalize(device=self.device)
 
         self.n_coords = n = ik_model.joint_coord_count
-        self.ik_joint_q = wp.clone(model.joint_q.reshape((n_worlds, -1))[:, :n])
-        self.control_target_q = self.control.joint_target_q.reshape((n_worlds, -1))
-        self.place_xy_wp = wp.array(self.place_xy, dtype=wp.vec2, device=self.device)
+        # Each world's franka block starts at its first joint (worlds can differ in size).
+        first = np.array([j[0] for j in self.franka_joints_w])
+        cols = np.arange(n)[None, :]
+        q_idx = model.joint_q_start.numpy()[first][:, None] + cols
+        qd_idx = model.joint_qd_start.numpy()[first][:, None] + cols
+        self.target_idx = wp.array(
+            (model.joint_target_q_start.numpy()[first][:, None] + cols).astype(np.int32),
+            dtype=wp.int32, ndim=2, device=self.device,
+        )  # fmt: skip
+        self.ik_joint_q = wp.array(model.joint_q.numpy()[q_idx], dtype=float, device=self.device)
         self.finger_pos = wp.full(n_worlds, GRIP_OPEN, dtype=float, device=self.device)
 
         hand = next(
@@ -564,8 +644,8 @@ class CoupledFrankaCable:
         self.ik_target_pos = wp.array(t0[:, 0:3], dtype=wp.vec3, device=self.device)
         self.ik_target_rot = wp.array(t0[:, 3:7], dtype=wp.vec4, device=self.device)
 
-        lower = wp.clone(model.joint_limit_lower.reshape((n_worlds, -1))[:, :n])
-        upper = wp.clone(model.joint_limit_upper.reshape((n_worlds, -1))[:, :n])
+        lower = wp.array(model.joint_limit_lower.numpy()[qd_idx], dtype=float, device=self.device)
+        upper = wp.array(model.joint_limit_upper.numpy()[qd_idx], dtype=float, device=self.device)
         self.ik_solver = ik.IKSolver(
             model=ik_model,
             n_problems=n_worlds,
@@ -647,7 +727,12 @@ class CoupledFrankaCable:
             ],
             device=self.device,
         )
-        wp.copy(dest=self.control_target_q[:, : self.n_coords], src=self.ik_joint_q)
+        wp.launch(
+            scatter_targets,
+            dim=self.ik_joint_q.shape,
+            inputs=[self.ik_joint_q, self.target_idx, self.control.joint_target_q],
+            device=self.device,
+        )
         for _ in range(self.cfg.substeps):
             self.state_0.clear_forces()
             self.collision_pipeline.collide(self.state_0, self.contacts)
@@ -661,28 +746,10 @@ class CoupledFrankaCable:
 
     def placement_errors(self) -> np.ndarray:
         """Per-world horizontal distance (m) from the cable centroid to the place target."""
-        n, segs = self.cfg.num_worlds, self.cfg.cable_segments
-        centroid = wp.zeros(n, dtype=wp.vec3, device=self.device)
-        error = wp.zeros(n, dtype=float, device=self.device)
-        wp.launch(
-            cable_centroid,
-            dim=n * segs,
-            inputs=[
-                self.state_0.body_q,
-                self.bodies_per_world,
-                self.cable_first_body,
-                segs,
-                centroid,
-            ],
-            device=self.device,
-        )
-        wp.launch(
-            placement_error,
-            dim=n,
-            inputs=[centroid, self.place_xy_wp, error],
-            device=self.device,
-        )
-        return error.numpy()
+        n = self.cfg.num_worlds
+        q = self.state_0.body_q.numpy()
+        centroid = np.stack([q[idx, 0:3].mean(axis=0) for idx in self.cable_bodies_w])
+        return np.linalg.norm(centroid[:, 0:2] - self.place_xy, axis=1)
 
     def _open_video(self):
         """Return (offscreen viewer, ffmpeg process) for ``cfg.video``."""
@@ -735,6 +802,12 @@ class CoupledFrankaCable:
             active = {k: v for k, v in self.rand_ranges.items() if v > 0}
             if active:
                 print("Domain randomization (half-ranges):", active)
+            if cfg.rand.per_world_build:
+                for w, g in enumerate(self.geoms):
+                    print(
+                        f"  world {w}: segments={g['segments']} length={g['length']:.3f} radius={g['radius']:.4f} "
+                        f"bend={g['bend']:.2e} stretch={g['stretch']:.2e} yaw={np.degrees(g['yaw']):.0f}deg"
+                    )
             print("Simulating (first frame compiles kernels)...")
 
         use_graph = cfg.cuda_graph and self.device.is_cuda

@@ -116,15 +116,24 @@ A value is a uniform half-range around nominal. Unset means off, or the default
 if `--sim.rand.all` is given; `0` always disables a parameter. Draw order is
 fixed, so enabling one parameter does not change the samples of the others.
 
-Not randomized yet:
+Expensive options (`--sim.rand.expensive`, or any of the flags below on their own). These
+change the cable topology or its joint parameters, so every world is built from its own
+`ModelBuilder` instead of one replicated template, and setup time grows with the world
+count. Worlds with fewer cable segments are padded with inert dummy bodies because
+`SolverMuJoCo` needs identical entity counts in every world.
 
-- Cable geometry (segment count, length, radius). These define the model
-  topology, which is shared by all worlds.
-- Cable bend and stretch stiffness (and damping). They are baked into the rod
-  joints by `add_rod`, so a per-world version needs the matching joint arrays edited.
-- Cable yaw, and the ground plane's own material. The ground is a single shape
-  shared by all worlds.
-- Franka initial pose, gripper force and finger gains, and sensor/actuation noise.
+| Flag | Default | Meaning |
+|---|---|---|
+| `--sim.rand.expensive` | off | Enable all of the flags below at their default range |
+| `--sim.rand.cable-length` | 0.2 | Cable length, relative |
+| `--sim.rand.cable-radius` | 0.2 | Cable radius, relative (re-seated on the ground) |
+| `--sim.rand.cable-segments` | 4 | Segment count, +- this many |
+| `--sim.rand.cable-bend` | 0.5 | Bend stiffness and damping, relative |
+| `--sim.rand.cable-stretch` | 0.5 | Stretch stiffness, relative |
+| `--sim.rand.cable-yaw` | 0.4 | Cable yaw about its centre, radians (the gripper does not follow) |
+
+Not randomized yet: the ground plane's own material (a single shape shared by all
+worlds), Franka initial pose, gripper force and finger gains, and sensor/actuation noise.
 
 ### 8. Render videos
 
