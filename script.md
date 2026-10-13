@@ -36,6 +36,34 @@ uv run main.py --help        # three subcommands: simulate, play, clean
 
 ---
 
+## 0a. Videos as a backup (no talk time)
+
+The slides embed an mp4 of each visual run, so you can show a result without
+waiting for a live simulation (or if the GPU or browser misbehaves). They come
+from `--sim.video`, which renders the run offscreen next to the `.viser`
+recording (needs `ffmpeg`, no display):
+
+```bash
+uv run main.py simulate --sim.video out/run.mp4      # any simulate command can add this
+./make_videos.sh                                     # all eight demo variants into videos/ (about 2-3 min)
+```
+
+| Slide | Video                      | Matches section |
+| ----- | -------------------------- | --------------- |
+| 4     | single arm                 | 0b              |
+| 12    | 16 worlds                  | 4               |
+| 20    | 2x speed, place target     | 5               |
+| 22    | longer, stiff, soft cable  | 6               |
+| 25    | randomized (8 worlds)      | 6b              |
+
+**Say:** the videos are renders of the same recordings you play in the browser.
+Use a video when the live run would eat the time slot, and run the command live
+when you want to show the printed timing and placement error (the videos do not).
+Each video shows a still frame until you play it; test playback in PowerPoint
+before the talk (it was only checked as a rendered still).
+
+---
+
 ## 0b. First demo: a single arm (2 min, run takes ~16 s warm)
 
 Start with the simplest case before explaining anything: one arm, one cable.
@@ -45,6 +73,7 @@ uv run main.py simulate --sim.num-worlds 1 --play
 ```
 
 Open the printed URL and let the 7 s pick-and-place play through.
+(Backup: the video on slide 4.)
 
 **Say:** this is the whole task: the arm picks up the cable and puts it
 somewhere else. Everything after this is how it works and how to scale it.
@@ -142,6 +171,8 @@ uv run main.py play --port 8000
 uv run main.py simulate --sim.num-worlds 16 --play
 ```
 
+(Backup: the 16-world video on slide 12.)
+
 **Say:** each world is a full copy of the scene. All worlds are simulated at the
 origin, and `--sim.world-spacing` only offsets them visually. Compare the
 `world-frames/s` figure with the 4-world run. Throughput should scale well
@@ -236,6 +267,7 @@ uv run main.py simulate --sim.place-x 0.3 --sim.place-y -0.2 --play
 ```
 
 Check the printed placement error to see whether the task still succeeds.
+(Backup: both runs side by side as videos on slide 20. The 2x run lasts 3.5 s.)
 
 ---
 
@@ -249,6 +281,9 @@ uv run main.py simulate --sim.cable-segments 31 --sim.cable-length 0.45 --play
 uv run main.py simulate --sim.cable-bend-stiffness 5e-2 --play
 uv run main.py simulate --sim.cable-bend-stiffness 5e-5 --play
 ```
+
+(Backup: the longer, stiff and soft cable videos side by side on slide 22. Play
+them together to compare how much the cable swings.)
 
 **Say:** this is the point of using VBD for the cable. Bend stiffness, stretch
 stiffness, density and segment count are all physical parameters. A floppier
@@ -297,6 +332,8 @@ world (`_sample_randomization`).
   (438 and 410 in two recorded runs).
 - The slide after the table is a recording of two real runs (`--sim.rand.all`, then
   `--sim.seed 7`): same flags, different per-world errors.
+- Slide 25 has a video of an 8-world `--sim.rand.all` run, if you would rather
+  not wait for the live one.
 - In the viewer the arms visibly pick up the cable at slightly different spots
   and drop it at different places.
 
@@ -375,6 +412,7 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | Section                     | Talk   | Simulation |
 | --------------------------- | ------ | ---------- |
 | 0 Setup and warm-up         | 1 min  | 16 s       |
+| 0a Videos (slides only)     | 0 min  | none       |
 | 0b Single arm               | 2 min  | 16 s       |
 | 1 Big picture               | 2 min  | none       |
 | 2 Simulate                  | 2 min  | 16 s       |
@@ -388,7 +426,8 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | 8–9 Remote, clean up        | 1.5 min| ~16 s      |
 | **Total**                   | ~24 min| ~7.5 min   |
 
-Plus playback and questions: about 31 minutes, just over a 30 minute slot. Drop section 7, 4b or 6b if you are running behind.
+Plus playback and questions: about 31 minutes, just over a 30 minute slot. Drop section 7, 4b or 6b if you are running behind, or play the slide videos
+(0a) instead of running sections 5 and 6 live, which saves about 70 s of simulation.
 Every command in this script was run and completed without errors.
 
 ## Suggested demo order if time is short (5 min)
