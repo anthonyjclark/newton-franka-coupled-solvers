@@ -4,7 +4,7 @@ A guided tour of the coupled Franka + cable demo. Each section gives the
 **command**, what to **say**, and what to **point out**. Total time is about
 about 15 minutes of talking plus about 5 minutes of simulation time (measured
 timings are in each section; worst case with every optional section is about
-31 minutes). Run everything from the project root. Timings were measured on one
+36 minutes). Run everything from the project root. Timings were measured on one
 CUDA GPU with a warm kernel cache; yours will vary.
 
 **The one-sentence pitch:** a MuJoCo-solved Franka arm picks up a VBD-solved
@@ -51,11 +51,11 @@ slides/make_videos.sh                               # all nine demo variants int
 | Slide | Video                      | Matches section |
 | ----- | -------------------------- | --------------- |
 | 4     | single arm                 | 0b              |
-| 12    | 16 worlds                  | 4               |
-| 20    | 2x speed, place target     | 5               |
-| 22    | longer, stiff, soft cable  | 6               |
-| 25    | randomized (8 worlds)      | 6b              |
-| 26    | expensive randomization    | 6b              |
+| 16    | 16 worlds                  | 4               |
+| 24    | 2x speed, place target     | 5               |
+| 26    | longer, stiff, soft cable  | 6               |
+| 29    | randomized (8 worlds)      | 6b              |
+| 30    | expensive randomization    | 6b              |
 
 **Say:** the videos are renders of the same recordings you play in the browser.
 Use a video when the live run would eat the time slot, and run the command live
@@ -106,6 +106,78 @@ cable, and the cable pushes back. `mode="lagged"` means the proxy lags by one st
 
 **Task control:** A keyframe table drives the hand target. IK turns it into
 joint targets, and Warp kernels broadcast it to every world.
+
+---
+
+## 1b. Solvers and coupling: background (4 min, no commands)
+
+Slides 6 to 9. Use them to explain *why* the demo pairs these two solvers. Source: the
+Newton docs pages "Solvers", "MuJoCo", "Kamino" and "Solver coupling" (stable).
+
+**Newton's solvers (slide 6).** A solver integrates a `Model`: you build a `State`, then
+call `solver.step(state_in, state_out, control, contacts, dt)`. The first decision is the
+coordinate system:
+
+| Solver               | Coordinates | Handles                      | Notes                                   |
+| -------------------- | ----------- | ---------------------------- | --------------------------------------- |
+| `SolverMuJoCo`       | generalized | rigid, articulated           | MuJoCo Warp; our arm                    |
+| `SolverFeatherstone` | generalized | rigid, particles, soft       | basic differentiability                 |
+| `SolverXPBD`         | maximal     | rigid, particles, cloth      | implicit; soft bodies experimental      |
+| `SolverSemiImplicit` | maximal     | rigid, particles, soft       | basic differentiability                 |
+| `SolverVBD`          | maximal     | rigid, particles, cloth, soft| implicit, experimental; our cable       |
+| `SolverKamino`       | maximal     | rigid, articulated           | kinematic loops; experimental           |
+| `SolverStyle3D`      | -           | particles, cloth             | no joints                               |
+| `SolverImplicitMPM`  | -           | particles                    | no rigid bodies or joints               |
+
+**Say:** only Featherstone and MuJoCo work in generalized coordinates; the others enforce
+joints as pairwise body constraints. Equality and mimic constraints exist only in MuJoCo.
+Differentiable simulation (`wp.Tape`, `finalize(requires_grad=True)`) works only with
+Featherstone and SemiImplicit, and only in a basic form. Shape material fields (`mu`,
+`ke`, `kd`, ...) are shared, but each solver uses a different subset. No single solver
+covers a stiff articulated arm and a thin deformable cable, which is why we couple two.
+The docs list `ROD` joints (the cable) only for VBD.
+
+**SolverMuJoCo (slide 7).** It wraps MuJoCo Warp. Each `step()` pushes Newton state into
+MuJoCo, integrates, and pulls the result back. Points that matter here:
+
+- The default integrator is `implicitfast`, chosen for stability with stiff systems. We pass
+  `solver="newton"`, `integrator="implicitfast"`, `cone="elliptic"`.
+- `use_mujoco_contacts=False` (our setting) uses Newton's collision pipeline instead of
+  MuJoCo's, which also supports non-convex meshes, SDF and hydroelastic contacts.
+- With several worlds it builds one MuJoCo model and replicates it, so every world needs the
+  same entity counts and types. This is why `--sim.rand.expensive` pads worlds that have
+  shorter cables with dummy bodies (section 6b).
+- It does not support `ROD` joints, cloth, particles or soft bodies, and non-convex meshes
+  are convex-hulled.
+
+**SolverKamino (slide 8).** A different tool, not used in the demo. It targets rigid
+mechanisms in maximal coordinates with kinematic loops, joint limits, hard frictional
+contacts and restitutive impacts. Backends: `"padmm"` (default, proximal ADMM, slower but
+robust) and `"dvi"` (sparse, faster, less accurate when many inequality constraints are
+active). It is experimental (BETA 1): the docs advise not depending on it. Mention it as
+the option to evaluate if you need closed chains rather than an arm and a cable.
+
+**Coupling (slide 9).** The coupled-solver framework is experimental. A
+`SolverCoupled.Entry` names the bodies, particles and shapes one sub-solver owns, and the
+base class reconciles only owned outputs back into the shared state, so two solvers never
+overwrite the same body. Two ways to couple:
+
+| | Proxy (`SolverCoupledProxy`) | ADMM (`SolverCoupledADMM`) |
+| --- | --- | --- |
+| Idea | the source owns the object; the destination sees a proxy with scaled inertia | interface rows between objects owned by different solvers |
+| Iteration | relaxed fixed point | fixed iteration count (graph-capture friendly) |
+| Good for | one solver treating the other as an obstacle or transfer participant | symmetric joints, attachments, contacts |
+| Tune | `mass_scale`, `proxy_relaxation`, `mode` | `rho`, `gamma`, `baumgarte` |
+
+**Say:** we use proxy coupling with `mode="lagged"`: the gripper is a proxy body inside the
+cable solver, and `coupling_iterations` (section 7) sets how many fixed-point passes run.
+`staggered` skips the rewind and suits schedules where the destination already sees a
+current source state. Proxy stability is sensitive to `mass_scale`, contact stiffness and
+the mode. ADMM supports cross-solver `BALL`, `FIXED` and `REVOLUTE` joints,
+body-particle attachments and contacts; the loop handles at most two entries in proxy mode.
+
+**Caveat:** both the coupling API and the VBD and Kamino solvers are experimental, so
+pin the Newton version (this project pins `1.5.*`) and expect changes.
 
 ---
 
@@ -268,7 +340,7 @@ uv run main.py simulate --sim.place-x 0.3 --sim.place-y -0.2 --play
 ```
 
 Check the printed placement error to see whether the task still succeeds.
-(Backup: both runs side by side as videos on slide 20. The 2x run lasts 3.5 s.)
+(Backup: both runs side by side as videos on slide 24. The 2x run lasts 3.5 s.)
 
 ---
 
@@ -283,7 +355,7 @@ uv run main.py simulate --sim.cable-bend-stiffness 5e-2 --play
 uv run main.py simulate --sim.cable-bend-stiffness 5e-5 --play
 ```
 
-(Backup: the longer, stiff and soft cable videos side by side on slide 22. Play
+(Backup: the longer, stiff and soft cable videos side by side on slide 26. Play
 them together to compare how much the cable swings.)
 
 **Say:** this is the point of using VBD for the cable. Bend stiffness, stretch
@@ -358,9 +430,9 @@ dummy bodies. The run header lists each world's sampled cable.
   (438 and 410 in two recorded runs).
 - The slide after the table is a recording of two real runs (`--sim.rand.all`, then
   `--sim.seed 7`): same flags, different per-world errors.
-- Slide 25 has a video of an 8-world `--sim.rand.all` run, if you would rather
+- Slide 29 has a video of an 8-world `--sim.rand.all` run, if you would rather
   not wait for the live one.
-- Slide 26 has a video of an 8-world `--sim.rand.all --sim.rand.expensive` run; all 8
+- Slide 30 has a video of an 8-world `--sim.rand.all --sim.rand.expensive` run; all 8
   cables were placed within 1 to 7 cm of their targets.
 - In the viewer the arms visibly pick up the cable at slightly different spots
   and drop it at different places.
@@ -443,6 +515,7 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | 0a Videos (slides only)     | 0 min  | none       |
 | 0b Single arm               | 2 min  | 16 s       |
 | 1 Big picture               | 2 min  | none       |
+| 1b Solvers and coupling     | 4 min  | none       |
 | 2 Simulate                  | 2 min  | 16 s       |
 | 3 Play back                 | 2 min  | none       |
 | 4 Scale (incl. CPU run)     | 3 min  | ~75 s      |
@@ -452,9 +525,9 @@ Warn the audience that the next `simulate` will recompile and may re-download.
 | 6b Domain randomization     | 2 min  | ~20 s      |
 | 7 Solver tuning and profile | 2 min  | 65 s       |
 | 8–9 Remote, clean up        | 1.5 min| ~16 s      |
-| **Total**                   | ~24 min| ~7.5 min   |
+| **Total**                   | ~28 min| ~7.5 min   |
 
-Plus playback and questions: about 31 minutes, just over a 30 minute slot. Drop section 7, 4b or 6b if you are running behind, or play the slide videos
+Plus playback and questions: about 36 minutes, well over a 30 minute slot. Drop section 1b, 7, 4b or 6b if you are running behind, or play the slide videos
 (0a) instead of running sections 5 and 6 live, which saves about 70 s of simulation.
 Every command in this script was run and completed without errors.
 
