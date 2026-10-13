@@ -15,7 +15,7 @@ Both `make_*` scripts take an optional output directory as their first argument.
 ```bash
 slides/make_gifs.sh                  # real simulation runs, several minutes
 slides/make_videos.sh                # about 2-3 min
-uvx --from python-pptx python slides/add_videos.py slides.pptx slides-video.pptx
+uvx --from python-pptx python slides/add_videos.py slides-<old-timestamp>-<old-message>.pptx slides-$(date +%Y%m%d-%H%M%S)-add-videos.pptx
 ```
 
 `add_videos.py` places each video slide after the slide with a given title ("First demo:

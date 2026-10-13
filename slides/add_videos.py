@@ -1,6 +1,6 @@
 """Insert simulation-video slides into the demo deck.
 
-    uvx --from python-pptx python slides/add_videos.py slides.pptx slides-video.pptx [--videos slides/videos]
+    uvx --from python-pptx python slides/add_videos.py in.pptx slides-<timestamp>-<message>.pptx [--videos slides/videos]
 
 Videos come from slides/make_videos.sh. Each new slide goes right after the slide whose
 title is listed below, reusing the "Recording:" slide layout. Poster frames are extracted
