@@ -45,7 +45,7 @@ recording (needs `ffmpeg`, no display):
 
 ```bash
 uv run main.py simulate --sim.video out/run.mp4      # any simulate command can add this
-./make_videos.sh                                     # all eight demo variants into videos/ (about 2-3 min)
+slides/make_videos.sh                               # all eight demo variants into slides/videos/ (about 2-3 min)
 ```
 
 | Slide | Video                      | Matches section |

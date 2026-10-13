@@ -1,9 +1,15 @@
+# Python / tooling
 .venv/
 __pycache__/
 *.pyc
 .ruff_cache/
 .claude/
+
+# Simulation output (simulate --sim.output, --sim.video examples)
 recordings/
-videos/
 out/
+
+# Slide deck and generated slide media: rebuild with the scripts in slides/
 *.pptx
+slides/gifs/
+slides/videos/

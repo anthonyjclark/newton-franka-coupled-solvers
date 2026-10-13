@@ -15,7 +15,7 @@ places it elsewhere; the two solvers are joined by proxy coupling.
 | ---              | ---                                                        |
 | `sim.py`         | Scene construction, solvers, IK, Warp kernels, `SimConfig` |
 | `main.py`        | tyro CLI (`simulate`, `play` and `clean` subcommands)      |
-| `qa.md`          | Status table of every CLI option and how it was verified   |
+| `slides/`        | Scripts that build the demo slides media (GIFs, videos)    |
 
 ## Setup
 
@@ -134,7 +134,7 @@ Frames come from an offscreen OpenGL (EGL) viewer, so no display is required:
 ```bash
 uv run main.py simulate --sim.video out/run.mp4                    # 1280x720, 60 fps
 uv run main.py simulate --sim.num-worlds 16 --sim.video out/many.mp4 --sim.video-size 1920 1080
-./make_videos.sh [outdir]      # one video per demo variant (default: videos/)
+slides/make_videos.sh [outdir]   # one video per demo variant (default: slides/videos/)
 ```
 
 The camera pulls back automatically as the world count grows.

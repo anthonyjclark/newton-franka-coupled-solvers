@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Render an .mp4 for each visual `simulate` variant used in the demo (see script.md).
-# Usage: ./make_videos.sh [outdir]      (default: videos/)
+# Usage: slides/make_videos.sh [outdir]      (default: slides/videos/)
+# Run from anywhere; commands execute at the project root.
 set -euo pipefail
-out=${1:-videos}
+cd "$(dirname "$0")/.."
+out=${1:-slides/videos}
 mkdir -p "$out"
 run() {  # run <name> <simulate args...>
   name=$1; shift
