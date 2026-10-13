@@ -250,11 +250,11 @@ def _build_one_world(
     b.joint_armature[:7] = [1.0e-3] * 7
     b.joint_armature[7:9] = [0.0] * 2
 
-    franka = dict(
-        bodies=list(range(body0, b.body_count)),
-        joints=list(range(joint0, b.joint_count)),
-        shapes=list(range(shape0, b.shape_count)),
-    )
+    franka = {
+        "bodies": list(range(body0, b.body_count)),
+        "joints": list(range(joint0, b.joint_count)),
+        "shapes": list(range(shape0, b.shape_count)),
+    }
 
     # The arm is gravity compensated so the PD targets only fight the contact.
     gravcomp = b.custom_attributes["mujoco:gravcomp"]

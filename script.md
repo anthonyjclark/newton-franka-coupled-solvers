@@ -12,10 +12,14 @@ cable and places it elsewhere. Two different solvers run in the same scene,
 coupled through a proxy. The simulation is headless and many worlds run in
 parallel on the GPU. You play it back in the browser afterwards.
 
-- parallelizing worlds
+Demo highlights for the audience:
+
 - coupling two solvers
+- task control through keyframes and IK 
+- parallelizing worlds
 - running headless and visualizing locally
-- 
+
+TODO(ajc): the first thing is a demo of the simulation with a single arm
 
 ---
 
@@ -135,6 +139,8 @@ uv run main.py simulate --sim.steps 120          # only the first 120 frames
 uv run main.py simulate --sim.device cpu --sim.num-worlds 1   # no GPU needed, slow
 uv run main.py simulate --sim.world-spacing 1.5   # spread them out again
 ```
+
+TODO(ajc): add timing for 1 world on the CPU vs 16 worlds on the GPU
 
 ---
 
