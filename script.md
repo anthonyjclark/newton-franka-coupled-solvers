@@ -375,6 +375,7 @@ uv run main.py simulate --sim.rand.all --play                  # every parameter
 uv run main.py simulate --sim.rand.friction 0.5                # only cable friction, +-50%
 uv run main.py simulate --sim.rand.all --sim.rand.timing 0     # everything except task timing
 uv run main.py simulate --sim.rand.all --sim.seed 7            # a different draw
+uv run main.py simulate --sim.rand.all --sim.rand.cable-pos 0.10 --sim.rand.place-pos 0.15   # wider spread, as in the videos
 ```
 
 | Flag (`--sim.rand.<name>`) | Randomizes                                     | Default range |
