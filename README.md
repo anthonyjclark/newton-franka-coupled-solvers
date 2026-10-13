@@ -126,7 +126,20 @@ Not randomized yet:
   shared by all worlds.
 - Franka initial pose, gripper force and finger gains, and sensor/actuation noise.
 
-### 8. Clean caches
+### 8. Render videos
+
+Add `--sim.video` to any `simulate` command to also write an `.mp4` (needs `ffmpeg`).
+Frames come from an offscreen OpenGL (EGL) viewer, so no display is required:
+
+```bash
+uv run main.py simulate --sim.video out/run.mp4                    # 1280x720, 60 fps
+uv run main.py simulate --sim.num-worlds 16 --sim.video out/many.mp4 --sim.video-size 1920 1080
+./make_videos.sh [outdir]      # one video per demo variant (default: videos/)
+```
+
+The camera pulls back automatically as the world count grows.
+
+### 9. Clean caches
 
 ```bash
 uv run main.py clean                 # Warp kernel + LTO caches, and Newton's downloaded assets
