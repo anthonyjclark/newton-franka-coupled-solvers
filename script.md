@@ -2,9 +2,9 @@
 
 A guided tour of the coupled Franka + cable demo. Each section gives the
 **command**, what to **say**, and what to **point out**. Total time is about
-about 15 minutes of talking plus about 5 minutes of simulation time (measured
-timings are in each section; worst case with every optional section is about
-36 minutes). Run everything from the project root. Timings were measured on one
+28 minutes of talking plus about 7.5 minutes of simulation time (measured
+timings are in each section and in the time budget; about 36 minutes with every
+section). Run everything from the project root. Timings were measured on one
 CUDA GPU with a warm kernel cache; yours will vary.
 
 **The one-sentence pitch:** a MuJoCo-solved Franka arm picks up a VBD-solved
@@ -55,7 +55,7 @@ slides/make_videos.sh                               # all nine demo variants int
 | 24    | 2x speed, place target     | 5               |
 | 26    | longer, stiff, soft cable  | 6               |
 | 29    | randomized (8 worlds)      | 6b              |
-| 30    | expensive randomization    | 6b              |
+| 31    | expensive randomization    | 6b              |
 
 **Say:** the videos are renders of the same recordings you play in the browser.
 Use a video when the live run would eat the time slot, and run the command live
@@ -431,9 +431,12 @@ dummy bodies. The run header lists each world's sampled cable.
 - The slide after the table is a recording of two real runs (`--sim.rand.all`, then
   `--sim.seed 7`): same flags, different per-world errors.
 - Slide 29 has a video of an 8-world `--sim.rand.all` run, if you would rather
-  not wait for the live one.
-- Slide 30 has a video of an 8-world `--sim.rand.all --sim.rand.expensive` run; all 8
-  cables were placed within 1 to 7 cm of their targets.
+  not wait for the live one. It passes `--sim.rand.cable-pos 0.10 --sim.rand.place-pos 0.15`
+  (above the defaults) so the different pick and place spots are visible in the video; all 8
+  cables were placed within 1 to 4 cm of their targets.
+- Slide 30 shows the expensive flags and slide 31 has a video of an 8-world
+  `--sim.rand.all --sim.rand.expensive` run with the same two larger values; all 8 cables
+  were placed within 1 to 6 cm of their targets.
 - In the viewer the arms visibly pick up the cable at slightly different spots
   and drop it at different places.
 

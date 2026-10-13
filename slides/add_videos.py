@@ -4,7 +4,7 @@
 
 Videos come from slides/make_videos.sh. Each new slide goes right after the slide whose
 title is listed below, reusing the "Recording:" slide layout. Poster frames are extracted
-with ffmpeg. Entries whose slide already exists are skipped, so it can top up a deck that
+with ffmpeg. --refresh also replaces the media of existing Video: slides in place. Entries whose slide already exists are skipped, so it can top up a deck that
 already has some "Video:" slides; it fails if there is nothing to add.
 """
 
@@ -36,11 +36,11 @@ NEW = [
      [("long-cable", "longer cable"), ("stiff-cable", "bend stiffness 5e-2"),
       ("soft-cable", "bend stiffness 5e-5")]),
     ("Recording: randomization", "Video: randomization",
-     "8 worlds with --sim.rand.all: each world gets its own friction, mass, gains and timing.",
+     "8 worlds with --sim.rand.all (cable-pos 0.10, place-pos 0.15 for a visible spread): each world gets its own friction, mass, gains and timing.",
      [("randomized", "")]),
-    ("Video: randomization", "Video: expensive randomization",
-     "8 worlds with --sim.rand.all --sim.rand.expensive: every world also gets its own cable "
-     "length, radius, segment count, stiffness and yaw.",
+    ("Expensive randomization", "Video: expensive randomization",
+     "Same 8 worlds plus --sim.rand.expensive: every world also gets its own cable length, "
+     "radius, segment count, stiffness and yaw.",
      [("randomized-expensive", "")]),
 ]
 
@@ -68,11 +68,37 @@ def title_of(slide) -> str:
     return sp.text_frame.text if sp is not None else ""
 
 
+def refresh_existing(prs, slides, videos: Path) -> int:
+    """Swap the media of existing "Video:" slides for the current files and captions, in place
+    (dropping and re-adding slides would collide with python-pptx's slide part names)."""
+    n = 0
+    R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    for sl in slides:
+        entry = next((e for e in NEW if e[1] == title_of(sl)), None)
+        if entry is None:
+            continue
+        for sh in sl.shapes:
+            if sh.name == "caption":
+                sh._element.findall(f".//{A}t")[0].text = entry[2]
+            if not sh.name.startswith("video "):
+                continue
+            video = videos / f"{sh.name[6:]}.mp4"
+            tmp = Path(tempfile.mkdtemp(prefix="posters-"))
+            vid_part = sl.part.related_part(sh._element.find(f".//{A}videoFile").get(f"{R}link"))
+            img_part = sl.part.related_part(sh._element.find(f".//{A}blip").get(f"{R}embed"))
+            vid_part._blob = video.read_bytes()
+            img_part._blob = poster(video, tmp).read_bytes()
+            n += 1
+    return n
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("deck", type=Path)
     ap.add_argument("out", type=Path)
     ap.add_argument("--videos", type=Path, default=Path("slides/videos"))
+    ap.add_argument("--refresh", action="store_true",
+                    help="also replace the media and captions of existing Video: slides with the current videos")
     args = ap.parse_args()
     if args.out.resolve() == args.deck.resolve():
         ap.error("out must differ from deck (keep the original)")
@@ -80,8 +106,11 @@ def main() -> None:
     prs = Presentation(args.deck)
     slides = list(prs.slides)
     titles = [title_of(s) for s in slides]
+    if args.refresh:
+        refreshed = refresh_existing(prs, slides, args.videos)
+        print(f"refreshed {refreshed} existing video(s) in place")
     todo = [e for e in NEW if e[1] not in titles]
-    if not todo:
+    if not todo and not args.refresh:
         ap.error("deck already has every Video: slide")
     known = set(titles) | {e[1] for e in todo}
     missing = [a for a, *_ in todo if a not in known]

@@ -19,5 +19,5 @@ run place-target   --sim.num-worlds 1 --sim.place-x 0.3 --sim.place-y -0.2
 run long-cable     --sim.num-worlds 1 --sim.cable-segments 31 --sim.cable-length 0.45
 run stiff-cable    --sim.num-worlds 1 --sim.cable-bend-stiffness 5e-2
 run soft-cable     --sim.num-worlds 1 --sim.cable-bend-stiffness 5e-5
-run randomized     --sim.num-worlds 8 --sim.rand.all
-run randomized-expensive --sim.num-worlds 8 --sim.rand.all --sim.rand.expensive
+run randomized     --sim.num-worlds 8 --sim.rand.all --sim.rand.cable-pos 0.10 --sim.rand.place-pos 0.15
+run randomized-expensive --sim.num-worlds 8 --sim.rand.all --sim.rand.expensive --sim.rand.cable-pos 0.10 --sim.rand.place-pos 0.15
