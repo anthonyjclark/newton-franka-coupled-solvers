@@ -7,6 +7,8 @@ lesson. The simulation runs without any rendering; every frame is written to a
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -127,6 +129,10 @@ class SimConfig:
     """Visual spacing (m) between worlds in the viewer. Small values make neighbouring
     arms overlap, which is harmless: physics stays at the origin."""
     output: Path = Path("recordings/franka_cable.viser")
+    video: Path | None = None
+    """Also render the run to this video file (.mp4) with an offscreen OpenGL viewer (needs ffmpeg)."""
+    video_size: tuple[int, int] = (1280, 720)
+    """Video width and height in pixels (rounded down to even numbers)."""
     seed: int = 0
     rand: Randomization = field(default_factory=Randomization)
     verbose: bool = True
@@ -678,6 +684,31 @@ class CoupledFrankaCable:
         )
         return error.numpy()
 
+    def _open_video(self):
+        """Return (offscreen viewer, ffmpeg process) for ``cfg.video``."""
+        cfg = self.cfg
+        if shutil.which("ffmpeg") is None:
+            raise ValueError("--sim.video needs ffmpeg on PATH")
+        import pyglet
+
+        pyglet.options["headless"] = True  # EGL: no display needed
+        w, h = (v // 2 * 2 for v in cfg.video_size)
+        gl = newton.viewer.ViewerGL(width=w, height=h, headless=True)
+        gl.set_model(self.model)
+        gl.set_world_offsets((cfg.world_spacing, cfg.world_spacing, 0.0))
+        # Pull the camera back so the whole grid of worlds stays in view.
+        grid = int(np.ceil(np.sqrt(cfg.num_worlds)))
+        zoom = 1.0 + (grid - 1) * cfg.world_spacing / 1.8
+        gl.set_camera(wp.vec3(1.2 * zoom, -1.9 * zoom, 1.1 * zoom), -20, 120)
+        Path(cfg.video).parent.mkdir(parents=True, exist_ok=True)
+        ff = subprocess.Popen(
+            ["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
+             "-s", f"{w}x{h}", "-r", str(cfg.fps), "-i", "-", "-an",
+             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "20", str(cfg.video)],
+            stdin=subprocess.PIPE,
+        )  # fmt: skip
+        return gl, ff
+
     def run(self) -> Path:
         """Simulate headlessly, writing every frame to ``cfg.output``. Returns the path."""
         cfg = self.cfg
@@ -692,6 +723,8 @@ class CoupledFrankaCable:
             viewer.set_camera(wp.vec3(0.9, -1.4, 0.9), -22, 120)
         except Exception:
             pass
+
+        gl, ff = self._open_video() if cfg.video else (None, None)
 
         frames = cfg.steps if cfg.steps is not None else self.task_frames
         if cfg.verbose:
@@ -726,6 +759,11 @@ class CoupledFrankaCable:
             viewer.begin_frame(sim_time)
             viewer.log_state(self.state_0)
             viewer.end_frame()
+            if gl is not None:
+                gl.begin_frame(sim_time)
+                gl.log_state(self.state_0)
+                gl.end_frame()
+                ff.stdin.write(gl.get_frame().numpy().tobytes())
             sim_time += self.frame_dt
         wp.synchronize_device(self.device)
         if cfg.profile and frames > 1:
@@ -750,4 +788,10 @@ class CoupledFrankaCable:
                 "Cable centroid -> place target error per world [m]:", np.round(err, 3)
             )
         viewer.close()  # also writes the recording
+        if gl is not None:
+            ff.stdin.close()
+            ff.wait()
+            gl.close()
+            if cfg.verbose:
+                print(f"Video written to {cfg.video}")
         return out
