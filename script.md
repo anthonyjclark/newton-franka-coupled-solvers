@@ -244,7 +244,7 @@ uv run main.py play --port 8000
 uv run main.py simulate --sim.num-worlds 16 --play
 ```
 
-(Backup: the 16-world video on slide 12.)
+(Backup: the 16-world video on slide 16.)
 
 **Say:** each world is a full copy of the scene. All worlds are simulated at the
 origin, and `--sim.world-spacing` only offsets them visually. Compare the
