@@ -9,10 +9,9 @@ from __future__ import annotations
 
 import shutil
 import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 import tyro
 
@@ -20,31 +19,55 @@ from sim import CoupledFrankaCable, SimConfig
 
 
 def play(recording: Path, port: int = 0) -> None:
-    """Serve a .viser recording in the browser until Ctrl+C (port 0 = pick a free one)."""
+    """Serve a .viser recording in the browser until Ctrl+C (port 0 = pick a free one).
+
+    The file is re-read on every request, so re-running ``simulate`` and refreshing
+    the page shows the new recording without restarting the server.
+    """
     if not recording.is_file():
         raise FileNotFoundError(f"recording not found: {recording}")
-    import http.server
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
     from newton.viewer import ViewerViser
 
-    # Newton always binds an ephemeral port; force the requested one for this call.
-    http_server = http.server.HTTPServer
+    recording = recording.resolve()
+    client_dir = str(ViewerViser.get_viser_client_dir())
 
-    class FixedPortServer(http_server):
-        def __init__(self, address, handler):
-            super().__init__((address[0], port), handler)
+    class Handler(SimpleHTTPRequestHandler):
+        extensions_map: ClassVar = {
+            **SimpleHTTPRequestHandler.extensions_map,
+            ".js": "application/javascript",
+        }
 
-    http.server.HTTPServer = FixedPortServer
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=client_dir, **kwargs)
+
+        def do_GET(self):
+            if self.path.split("?")[0] != f"/{recording.name}":
+                return super().do_GET()
+            try:
+                data = recording.read_bytes()
+            except OSError:
+                return self.send_error(404, f"recording not found: {recording}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    url = f"http://127.0.0.1:{server.server_address[1]}/?playbackPath={recording.name}"
+    print(f"Playback: {url}  (Ctrl+C to quit; refresh after re-simulating)", flush=True)
     try:
-        url = ViewerViser._serve_viser_recording(str(recording))
-    finally:
-        http.server.HTTPServer = http_server
-    print(f"Playback: {url}  (Ctrl+C to quit)", flush=True)
-    try:
-        while True:
-            time.sleep(0.5)
+        server.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        server.server_close()
 
 
 @dataclass

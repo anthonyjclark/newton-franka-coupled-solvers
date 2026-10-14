@@ -577,8 +577,8 @@ Warn the audience that the next `simulate` will recompile and may re-download.
   Larger values hold the final pose.
 - While simulating, the recorder starts a viser server on port 8080 (or the next free port if taken;
   tested).
-- `play` calls a private Newton method (`ViewerViser._serve_viser_recording`),
-  so a Newton upgrade may break it.
+- `play` re-reads the `.viser` file on every request, so you can leave it running,
+  re-run `simulate` in another terminal and refresh the browser to see the new run.
 - The arm is gravity compensated, so the PD targets only fight contact.
 
 ## Time budget
