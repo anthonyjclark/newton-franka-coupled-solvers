@@ -180,7 +180,7 @@ uv run main.py simulate --help     # lists every option with defaults
   appears even with `--quiet`. If the port is taken, viser moves to the next free one (tested).
 - Runs are not bit-for-bit reproducible, even with the same `--sim.seed`: the random
   parameters are identical, but GPU contact/solver ordering makes the final placement error vary by
-  a centimetre or more between runs (and between different world counts).
+  a centimeter or more between runs (and between different world counts).
 - The final printed per-world "placement error" is the horizontal distance from
   the cable centroid to the place target; expect roughly 1-6 cm with defaults (it varies run to run; see above).
 - `play` relies on a private Newton method (`ViewerViser._serve_viser_recording`)
